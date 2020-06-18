@@ -45,10 +45,9 @@ class MLP(nn.Module):
         
         self.user_embeddings = nn.Embedding(config.user_count, config.mlp_dim * 2**(config.layers_count - 1))
         self.item_embeddings = nn.Embedding(config.item_count, config.mlp_dim * 2**(config.layers_count - 1))
-        
         self.hidden = MLP.create_hidden_layers(config)
         
-        self.out = nn.Sequential([nn.Linear(config.mlp_dim, 1), nn.Sigmoid()])
+        self.out = nn.Sequential(nn.Linear(config.mlp_dim, 1), nn.Sigmoid())
 
 
     @staticmethod 
@@ -56,18 +55,19 @@ class MLP(nn.Module):
         hidden_layers = []
         for i in range(config.layers_count):
             input_size = config.mlp_dim * 2**(config.layers_count - i)
+            output_size = input_size // 2
             if i == 0:
                 input_size += config.user_features
                 input_size += config.item_features
-            hidden_layers.extend([nn.Linear(input_size, input_size // 2), nn.LeakyReLU(config.slope), nn.Dropout(config.dropout)])
+            hidden_layers.extend([nn.Linear(input_size, output_size), nn.LeakyReLU(config.slope), nn.Dropout(config.dropout)])
         hidden = nn.Sequential(*hidden_layers)
         return hidden
 
 
     def forward(self, *net_input):
-        input_vector = MLP.parse_input(net_input, self.user_embeddings, self.item_embeddings)
+        input_vector = MLP.parse_input(*net_input, user_embeddings_layer=self.user_embeddings, item_embeddings_layer=self.item_embeddings)
         hidden_output = self.hidden(input_vector)
-        prob = self.hidden(hidden_output)
+        prob = self.out(hidden_output)
         return prob
 
 
@@ -94,6 +94,8 @@ Enseble of GMF and MLP
 class NeuMF(nn.Module):
     
     def __init__(self, config):
+        super(NeuMF, self).__init__()
+        
         self.user_embeddings_gmf = nn.Embedding(config.user_count, config.gmf_dim)
         self.item_embeddings_gmf = nn.Embedding(config.item_count, config.gmf_dim)
         
@@ -106,8 +108,8 @@ class NeuMF(nn.Module):
 
     def forward(self, *net_input):
         assert len(net_input) >= 2, "Input must contain at least user and item"
-        gmf_output = self.forward_gmf(net_input)
-        mlp_output = self.forward_mlp(net_input)
+        gmf_output = self.forward_gmf(*net_input)
+        mlp_output = self.forward_mlp(*net_input)
         last_layer_input = torch.cat((gmf_output, mlp_output), dim=1)
         prob = self.out(last_layer_input)
         return prob
@@ -122,7 +124,63 @@ class NeuMF(nn.Module):
 
 
     def forward_mlp(self, *net_input):
-        input_tensor = MLP.parse_input(net_input, self.user_embeddings_mlp, self.item_embeddings_mlp)
+        input_tensor = MLP.parse_input(*net_input, user_embeddings_layer=self.user_embeddings_mlp, item_embeddings_layer=self.item_embeddings_mlp)
         output_tensor = self.hidden(input_tensor)
         return output_tensor
+    
+    @staticmethod
+    def load_pretrained(gmf_model, mlp_model, config):
+        neu_mf_model = NeuMF(config)
         
+        # Load GMF embeddings
+        neu_mf_model.user_embeddings_gmf.weight = gmf_model.user_embeddings.weight
+        neu_mf_model.item_embeddings_gmf.weight = gmf_model.item_embeddings.weight
+        
+        # Load MLP embeddings
+        neu_mf_model.user_embeddings_mlp.weight = mlp_model.user_embeddings.weight
+        neu_mf_model.item_embeddings_mlp.weight = mlp_model.item_embeddings.weight
+        
+        # Load hidden layers from MLP
+        neu_mf_state_dict = neu_mf_model.state_dict()
+        hidden_mlp_state_dict = mlp_model.hidden.state_dict()
+        hidden_state_dict = { "hidden."+k:v for k,v in hidden_mlp_state_dict.items() }
+        neu_mf_state_dict.update(hidden_state_dict)
+        neu_mf_model.load_state_dict(neu_mf_state_dict)
+        
+        # Last output layer is a concatenation of weights of GMF and MLP output layers respectively
+        # There is a trade-off between weights of small models, which is tuned by alpha (hyperparameter)
+        # alpha - coefficient for GMF weights, (1 - alpha) - coefficient for MLP Weights
+        alpha = config.alpha
+        gmf_out_layer_weights, gmf_out_layer_bias = alpha*gmf_model.out[0].weight, alpha*gmf_model.out[0].bias
+        mlp_out_layer_weights, mlp_out_layer_bias = (1.0 - alpha)*mlp_model.out[0].weight, (1.0 - alpha)*mlp_model.out[0].bias
+        
+        out_weights = torch.cat((gmf_out_layer_weights, mlp_out_layer_weights), dim=1)
+        out_bias = gmf_out_layer_bias + mlp_out_layer_bias
+        
+        neu_mf_model.out[0].weight = nn.Parameter(out_weights)
+        neu_mf_model.out[0].bias = nn.Parameter(out_bias)
+        return neu_mf_model
+    
+    
+if __name__ == "__main__":
+    from torchsummaryX import summary
+    from hparams.utils import Hparam
+    import sys
+    
+    config = Hparam(sys.argv[1])
+    
+    gmf_model = GMF(config.gmf)
+    mlp_model = MLP(config.mlp)
+    
+    BATCH_SIZE = 1024
+    user, item = [torch.zeros(BATCH_SIZE).long() for _ in range(2)]
+    print('===============================================================')
+    print('                             GMF                               ')
+    _ = summary(gmf_model, user, item)
+    print('===================================================================')
+    print('                               MLP                                 ')
+    _ = summary(mlp_model, user, item)
+    print('====================================================================')
+    print('                                NeuMF                               ')
+    neu_mf_model = NeuMF.load_pretrained(gmf_model, mlp_model, config.neu_mf)
+    _ = summary(neu_mf_model, user, item)
