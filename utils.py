@@ -26,10 +26,7 @@ def generate_neu_mf_config(config_path):
         conf.item_count = config.item_count
     return configs
 
-<<<<<<< HEAD
 
-=======
->>>>>>> c8d3072f3fe1c700a03549d055538f4334be5b88
 if __name__ == '__main__':
     import sys
     config_path = sys.argv[1]
