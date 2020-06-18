@@ -30,7 +30,10 @@ class UserItemDataset(BaseDataset):
         
         if config.flood_negative:
             negative_samples = flood_negative(self.data, config)
+            #positive data should be provided with no ratings, because in NCF
+            #we mark interaction as 1 if user knows about item's existence
             self.data = list(map(lambda x: (x[0], x[1], 1.0), self.data))
+            #otherwise, we mark non-observed items as zero
             self.data.extend(negative_samples)
             
         if 'user_features' in data_dict:
@@ -88,8 +91,12 @@ def reindex_data(data_samples):
 
 def flood_negative(positive_data_samples, config):
     per_user = config.negatives_per_user
+    #For fast search we need to create set of tuples like (user, item)
     positive_set = set(map(lambda x: (x[0], x[1]), positive_data_samples))
+    #To iterate over each user once (and don't search in already created negative samples)
     user_set = set(map(lambda x: x[0], positive_data_samples))
+    
+    #Cause items have been already reindexed, MAX_ITEM_ID = len(set(ITEMS)) - 1
     item_next_idx = len(set(map(lambda x: x[1], positive_data_samples)))
     negative_samples = []
     for user in user_set:
@@ -99,6 +106,7 @@ def flood_negative(positive_data_samples, config):
             pair = (user, item_idx)
             if pair not in sample and pair not in positive_set:
                 sample.add(pair)
+        #Generate samples with zero labels
         negative_samples.extend(list(map(lambda x: (x[0], x[1], 0.0) ,sample)))
     return negative_samples
     
