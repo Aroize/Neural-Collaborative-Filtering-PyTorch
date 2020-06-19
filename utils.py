@@ -1,4 +1,5 @@
 from hparams.utils import Hparam
+import numpy as np
 import math
 
 """
@@ -31,6 +32,8 @@ def generate_neu_mf_config(config_path):
 """
 NDCG@K - Normalized Discounted Cumulative Gain at K
 
+Metric takes into consideration position of correct predicted labels
+
 $ DCG@K = \sum_{i = 1}^{N} \frac{rel_i}{log_2(i + 1)} $
 $ NDCG@K = \frac{DCG@K}{IDCG@K} $
 
@@ -53,13 +56,35 @@ def ndcg(test_items, predictions, topK):
         ideal_score += (1.0 / math.log(index + 2, 2))
     return float(dcg_score) / ideal_score
 
+"""
+HR@K - Hit Rate at K
+Represents count of hits of predictions in real test sample
+"""
+def hr(test_items, predictions, topK):
+    topK_predictions = sorted(predictions, key=lambda x: x[1])[:topK]
+    prediction_set = set(map(lambda x: x[0], topK_predictions))
+    hits = test_items.intersection(prediction_set)
+    total = min(topK, len(test_items))
+    return float(len(hits)) / total
+
 
 if __name__ == '__main__':
     import sys
+    
     config_path = sys.argv[1]
     gmf, mlp, neu = generate_neu_mf_config(config_path)
     print('GMF config ', gmf)
     print('MLP config ', mlp)
     print('NeuMF config', neu)
+    
+    test_items = {1, 2, 3, 4}
+    predictions = [(i, np.random.rand()) for i in range(len(test_items)*2)]
+    topK = 3
+    ndcg_score = ndcg(test_items, predictions, topK)
+    hr_score = hr(test_items, predictions, topK)
+    print('test items : ', test_items)
+    print('predictions : ', sorted(predictions, key=lambda x: x[1]))
+    print('NDCG@3 = ', ndcg_score)
+    print('HR@3 = ', hr_score)
     
     
