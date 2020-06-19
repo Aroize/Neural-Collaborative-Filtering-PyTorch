@@ -1,11 +1,10 @@
+user_count: 1024
+item_count: 2048
+
 gmf:
- user_count: 1024
- item_count: 2048
  gmf_dim: 8
  
 mlp:
- user_count: 1024
- item_count: 2048
  mlp_dim: 32
  layers_count: 3
  slope: 0.2
@@ -14,8 +13,6 @@ mlp:
  item_features: 0
 
 neu_mf:
- user_count: 1024
- item_count: 2048
  mlp_dim: 32
  layers_count: 3
  slope: 0.2
@@ -24,3 +21,6 @@ neu_mf:
  item_features: 0
  gmf_dim: 8
  alpha: 0.5
+ 
+dataset:
+ negatives_per_user: 1
