@@ -24,3 +24,6 @@ neu_mf:
  item_features: 0
  gmf_dim: 8
  alpha: 0.5
+ 
+dataset:
+ negatives_per_user: 1
